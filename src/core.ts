@@ -10,7 +10,7 @@ import type {
   RawServerBase,
   RawServerDefault,
 } from 'fastify'
-import type { $ZodRegistry, input, output } from 'zod/v4/core'
+import type { $ZodRegistry, input, JSONSchema, output } from 'zod/v4/core'
 import { $ZodType, globalRegistry, safeParse } from 'zod/v4/core'
 import { createValidationError, InvalidSchemaError, ResponseSerializationError } from './errors'
 import { getOASVersion, jsonSchemaToOAS } from './json-to-oas'
@@ -48,6 +48,8 @@ export const createJsonSchemaTransform = ({
   schemaRegistry = globalRegistry,
   zodToJsonConfig = {},
 }: CreateJsonSchemaTransformOptions): SwaggerTransform<Schema> => {
+  const zodSchemaToJsonCache = new WeakMap<$ZodType, Map<string, JSONSchema.BaseSchema>>()
+
   return (input) => {
     if ('swaggerObject' in input) {
       throw new Error('OpenAPI 2.0 is not supported')
@@ -77,18 +79,32 @@ export const createJsonSchemaTransform = ({
 
     for (const prop in zodSchemas) {
       const zodSchema = zodSchemas[prop]
-      if (zodSchema) {
-        const jsonSchema = zodSchemaToJson(
+      if (!zodSchema) {
+        continue
+      }
+
+      const cacheKey = `input|${oasVersion}|${zodToJsonConfig.target ?? ''}`
+
+      let perSchema = zodSchemaToJsonCache.get(zodSchema)
+      if (!perSchema) {
+        perSchema = new Map<string, JSONSchema.BaseSchema>()
+        zodSchemaToJsonCache.set(zodSchema, perSchema)
+      }
+
+      let jsonSchema = perSchema.get(cacheKey)
+      if (!jsonSchema) {
+        jsonSchema = zodSchemaToJson(
           zodSchema,
           schemaRegistry,
           'input',
           oasVersion,
           zodToJsonConfig,
         )
-        const oasSchema = jsonSchemaToOAS(jsonSchema, oasVersion)
-
-        transformed[prop] = oasSchema
+        perSchema.set(cacheKey, jsonSchema)
       }
+
+      const oasSchema = jsonSchemaToOAS(jsonSchema, oasVersion)
+      transformed[prop] = oasSchema
     }
 
     if (response) {
@@ -96,13 +112,26 @@ export const createJsonSchemaTransform = ({
 
       for (const prop in response as any) {
         const zodSchema = resolveSchema((response as any)[prop])
-        const jsonSchema = zodSchemaToJson(
-          zodSchema,
-          schemaRegistry,
-          'output',
-          oasVersion,
-          zodToJsonConfig,
-        )
+
+        const cacheKey = `output|${oasVersion}|${zodToJsonConfig.target ?? ''}`
+
+        let perSchema = zodSchemaToJsonCache.get(zodSchema)
+        if (!perSchema) {
+          perSchema = new Map<string, JSONSchema.BaseSchema>()
+          zodSchemaToJsonCache.set(zodSchema, perSchema)
+        }
+
+        let jsonSchema = perSchema.get(cacheKey)
+        if (!jsonSchema) {
+          jsonSchema = zodSchemaToJson(
+            zodSchema,
+            schemaRegistry,
+            'output',
+            oasVersion,
+            zodToJsonConfig,
+          )
+          perSchema.set(cacheKey, jsonSchema)
+        }
 
         // Check is the JSON schema is null then return as it is since fastify-swagger will handle it
         if (jsonSchema.type === 'null') {
