@@ -1,4 +1,3 @@
-import type { ZodType } from 'zod'
 import type {
   $ZodDate,
   $ZodUndefined,
@@ -75,7 +74,7 @@ const deleteInvalidProperties: (
 }
 
 export const zodSchemaToJson: (
-  zodSchema: ZodType,
+  zodSchema: $ZodType,
   registry: $ZodRegistry<SchemaRegistryMeta>,
   io: 'input' | 'output',
   config: ZodToJsonConfig,

@@ -5,14 +5,13 @@ import type {
   FastifyPluginOptions,
   FastifySchema,
   FastifySchemaCompiler,
+  FastifySerializerCompiler,
   FastifyTypeProvider,
   RawServerBase,
   RawServerDefault,
 } from 'fastify'
-import type { FastifySerializerCompiler } from 'fastify/types/schema'
-import type { ZodType } from 'zod'
-import type { $ZodRegistry, input, output } from 'zod/v4/core'
-import { $ZodType, globalRegistry, safeParse } from 'zod/v4/core'
+import type { $ZodRegistry, output } from 'zod/v4/core'
+import { $ZodType, globalRegistry, safeDecode, safeEncode } from 'zod/v4/core'
 import { createValidationError, InvalidSchemaError, ResponseSerializationError } from './errors'
 import { generateIORegistries, type SchemaRegistryMeta } from './registry'
 import { assertIsOpenAPIObject, getJSONSchemaTarget } from './utils'
@@ -32,7 +31,7 @@ const defaultSkipList = [
 
 export interface ZodTypeProvider extends FastifyTypeProvider {
   validator: this['schema'] extends $ZodType ? output<this['schema']> : unknown
-  serializer: this['schema'] extends $ZodType ? input<this['schema']> : unknown
+  serializer: this['schema'] extends $ZodType ? output<this['schema']> : unknown
 }
 
 interface Schema extends FastifySchema {
@@ -152,7 +151,7 @@ export const jsonSchemaTransformObject: SwaggerTransformObject = createJsonSchem
 export const validatorCompiler: FastifySchemaCompiler<$ZodType> =
   ({ schema }) =>
   (data) => {
-    const result = safeParse(schema, data)
+    const result = safeDecode(schema, data)
     if (result.error) {
       return { error: createValidationError(result.error) as unknown as Error }
     }
@@ -160,12 +159,12 @@ export const validatorCompiler: FastifySchemaCompiler<$ZodType> =
     return { value: result.data }
   }
 
-function resolveSchema(maybeSchema: $ZodType | { properties: $ZodType }): ZodType {
+function resolveSchema(maybeSchema: $ZodType | { properties: $ZodType }): $ZodType {
   if (maybeSchema instanceof $ZodType) {
-    return maybeSchema as ZodType
+    return maybeSchema as $ZodType
   }
   if ('properties' in maybeSchema && maybeSchema.properties instanceof $ZodType) {
-    return maybeSchema.properties as ZodType
+    return maybeSchema.properties as $ZodType
   }
   throw new InvalidSchemaError(JSON.stringify(maybeSchema))
 }
@@ -184,7 +183,7 @@ export const createSerializerCompiler =
   (data) => {
     const schema = resolveSchema(maybeSchema)
 
-    const result = safeParse(schema, data)
+    const result = safeEncode(schema, data)
     if (result.error) {
       throw new ResponseSerializationError(method, url, { cause: result.error })
     }
