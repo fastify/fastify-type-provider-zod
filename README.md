@@ -6,10 +6,7 @@
 
 ## Zod compatibility
 
-| @fastify/type-provider-zod | zod |
-|----------------------------|-----|
-| <=4.x                      | v3  |
-| >=5.x                      | v4  |
+`@fastify/type-provider-zod` only works with Zod v4.
 
 ## How to use?
 
