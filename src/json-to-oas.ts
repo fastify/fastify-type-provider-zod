@@ -39,8 +39,11 @@ export const jsonSchemaToOAS_3_0 = (jsonSchema: JSONSchema.BaseSchema): OpenAPIV
     Array.isArray(v) ? v.map(jsonSchemaToOAS_3_0) : jsonSchemaToOAS_3_0(v)
 
   if (clone.properties) {
-    for (const [k, v] of Object.entries(clone.properties)) {
-      clone.properties![k] = jsonSchemaToOAS_3_0(v as any)
+    // Important: avoid mutating the original jsonSchema (it may be cached).
+    const original = clone.properties
+    clone.properties = {}
+    for (const [k, v] of Object.entries(original)) {
+      clone.properties[k] = jsonSchemaToOAS_3_0(v as any)
     }
   }
 
