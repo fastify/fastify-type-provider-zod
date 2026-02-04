@@ -3,10 +3,41 @@ name: CI
 on:
   push:
     branches:
-      - main
+     - main
+     - next
+     - 'v*'
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+    group: "${{ github.workflow }}-${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
+    cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+
   test:
     permissions:
       contents: read
@@ -24,13 +55,14 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v6
         with:
+          check-latest: true
           node-version: ${{ matrix.node-version }}
 
       - name: Install
-        run: npm install
+        run: npm i --ignore-scripts
 
       - name: Install PeerDeps
-        run: npm i fastify zod
+        run: npm i --ignore-scripts fastify zod
 
       - name: Run tests
         run: npm run test:ci
@@ -39,12 +71,18 @@ jobs:
         run: npm run lint
 
   automerge:
-    needs: test
-    runs-on: ubuntu-latest
+    name: Automerge Dependabot PRs
+    if: >
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'dependabot[bot]'
+    needs: [test]
     permissions:
       pull-requests: write
       contents: write
+    runs-on: ubuntu-latest
     steps:
-      - uses: fastify/github-action-merge-dependabot@v3
+      - uses: fastify/github-action-merge-dependabot@1b2ed42db8f9d81a46bac83adedfc03eb5149dff # v3.11.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          target: major
