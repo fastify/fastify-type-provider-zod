@@ -120,44 +120,44 @@ export const createJsonSchemaTransformObject =
     schemaRegistry = globalRegistry,
     zodToJsonConfig = {},
   }: CreateJsonSchemaTransformObjectOptions): SwaggerTransformObject =>
-    (document) => {
-      assertIsOpenAPIObject(document)
+  (document) => {
+    assertIsOpenAPIObject(document)
 
-      const target = getJSONSchemaTarget(document.openapiObject.openapi)
-      const config = {
-        target,
-        ...zodToJsonConfig,
-      }
-
-      const { inputRegistry, outputRegistry } = generateIORegistries(schemaRegistry)
-      const inputSchemas = zodRegistryToJson(inputRegistry, 'input', config)
-      const outputSchemas = zodRegistryToJson(outputRegistry, 'output', config)
-
-      return {
-        ...document.openapiObject,
-        components: {
-          ...document.openapiObject.components,
-          schemas: {
-            ...document.openapiObject.components?.schemas,
-            ...inputSchemas,
-            ...outputSchemas,
-          },
-        },
-      } as ReturnType<SwaggerTransformObject>
+    const target = getJSONSchemaTarget(document.openapiObject.openapi)
+    const config = {
+      target,
+      ...zodToJsonConfig,
     }
+
+    const { inputRegistry, outputRegistry } = generateIORegistries(schemaRegistry)
+    const inputSchemas = zodRegistryToJson(inputRegistry, 'input', config)
+    const outputSchemas = zodRegistryToJson(outputRegistry, 'output', config)
+
+    return {
+      ...document.openapiObject,
+      components: {
+        ...document.openapiObject.components,
+        schemas: {
+          ...document.openapiObject.components?.schemas,
+          ...inputSchemas,
+          ...outputSchemas,
+        },
+      },
+    } as ReturnType<SwaggerTransformObject>
+  }
 
 export const jsonSchemaTransformObject: SwaggerTransformObject = createJsonSchemaTransformObject({})
 
 export const validatorCompiler: FastifySchemaCompiler<$ZodType> =
   ({ schema }) =>
-    (data) => {
-      const result = safeDecode(schema, data)
-      if (result.error) {
-        return { error: createValidationError(result.error) as unknown as Error }
-      }
-
-      return { value: result.data }
+  (data) => {
+    const result = safeDecode(schema, data)
+    if (result.error) {
+      return { error: createValidationError(result.error) as unknown as Error }
     }
+
+    return { value: result.data }
+  }
 
 function resolveSchema(maybeSchema: $ZodType | { properties: $ZodType }): $ZodType {
   if (maybeSchema instanceof $ZodType) {
@@ -179,17 +179,17 @@ export const createSerializerCompiler =
   (
     options?: ZodSerializerCompilerOptions,
   ): FastifySerializerCompiler<$ZodType | { properties: $ZodType }> =>
-    ({ schema: maybeSchema, method, url }) =>
-      (data) => {
-        const schema = resolveSchema(maybeSchema)
+  ({ schema: maybeSchema, method, url }) =>
+  (data) => {
+    const schema = resolveSchema(maybeSchema)
 
-        const result = safeEncode(schema, data)
-        if (result.error) {
-          throw new ResponseSerializationError(method, url, { cause: result.error })
-        }
+    const result = safeEncode(schema, data)
+    if (result.error) {
+      throw new ResponseSerializationError(method, url, { cause: result.error })
+    }
 
-        return JSON.stringify(result.data, options?.replacer)
-      }
+    return JSON.stringify(result.data, options?.replacer)
+  }
 
 export const serializerCompiler: ReturnType<typeof createSerializerCompiler> =
   createSerializerCompiler({})
