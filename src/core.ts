@@ -16,7 +16,6 @@ import { createValidationError, InvalidSchemaError, ResponseSerializationError }
 import { generateIORegistries, type SchemaRegistryMeta } from './registry'
 import { assertIsOpenAPIObject, getJSONSchemaTarget } from './utils'
 import { type ZodToJsonConfig, zodRegistryToJson, zodSchemaToJson } from './zod-to-json'
-import { jsonSchemaToOAS } from './json-to-oas'
 
 type FreeformRecord = Record<string, any>
 
@@ -86,9 +85,6 @@ export const createJsonSchemaTransform = ({
       if (zodSchema) {
         transformed[prop] = zodSchemaToJson(zodSchema, inputRegistry, 'input', config)
       }
-
-      const oasSchema = jsonSchemaToOAS(jsonSchema, oasVersion)
-      transformed[prop] = oasSchema
     }
 
     if (response) {
