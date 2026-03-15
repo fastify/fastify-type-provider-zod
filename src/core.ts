@@ -10,7 +10,7 @@ import type {
   RawServerBase,
   RawServerDefault,
 } from 'fastify'
-import type { $ZodRegistry, output } from 'zod/v4/core'
+import type { $ZodRegistry, JSONSchema, output } from 'zod/v4/core'
 import { $ZodType, globalRegistry, safeDecode, safeEncode } from 'zod/v4/core'
 import { createValidationError, InvalidSchemaError, ResponseSerializationError } from './errors'
 import { generateIORegistries, type SchemaRegistryMeta } from './registry'
@@ -49,6 +49,8 @@ export const createJsonSchemaTransform = ({
   schemaRegistry = globalRegistry,
   zodToJsonConfig = {},
 }: CreateJsonSchemaTransformOptions): SwaggerTransform<Schema> => {
+  const zodSchemaToJsonCache = new WeakMap<$ZodType, Map<string, JSONSchema.BaseSchema>>()
+
   return (document) => {
     assertIsOpenAPIObject(document)
 
@@ -82,9 +84,25 @@ export const createJsonSchemaTransform = ({
 
     for (const prop in zodSchemas) {
       const zodSchema = zodSchemas[prop]
-      if (zodSchema) {
-        transformed[prop] = zodSchemaToJson(zodSchema, inputRegistry, 'input', config)
+      if (!zodSchema) {
+        continue
       }
+
+      const cacheKey = `input|${config.target}`
+
+      let perSchema = zodSchemaToJsonCache.get(zodSchema)
+      if (!perSchema) {
+        perSchema = new Map<string, JSONSchema.BaseSchema>()
+        zodSchemaToJsonCache.set(zodSchema, perSchema)
+      }
+
+      let jsonSchema = perSchema.get(cacheKey)
+      if (!jsonSchema) {
+        jsonSchema = zodSchemaToJson(zodSchema, inputRegistry, 'input', config)
+        perSchema.set(cacheKey, jsonSchema)
+      }
+
+      transformed[prop] = jsonSchema
     }
 
     if (response) {
@@ -93,7 +111,21 @@ export const createJsonSchemaTransform = ({
       for (const prop in response as any) {
         const zodSchema = resolveSchema((response as any)[prop])
 
-        transformed.response[prop] = zodSchemaToJson(zodSchema, outputRegistry, 'output', config)
+        const cacheKey = `output|${config.target}`
+
+        let perSchema = zodSchemaToJsonCache.get(zodSchema)
+        if (!perSchema) {
+          perSchema = new Map<string, JSONSchema.BaseSchema>()
+          zodSchemaToJsonCache.set(zodSchema, perSchema)
+        }
+
+        let jsonSchema = perSchema.get(cacheKey)
+        if (!jsonSchema) {
+          jsonSchema = zodSchemaToJson(zodSchema, outputRegistry, 'output', config)
+          perSchema.set(cacheKey, jsonSchema)
+        }
+
+        transformed.response[prop] = jsonSchema
       }
     }
 
