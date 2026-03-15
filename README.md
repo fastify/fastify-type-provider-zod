@@ -6,11 +6,11 @@
 
 ## Zod compatibility
 
-`@fastify/type-provider-zod` only works with Zod v4.3 or later.
+`@fastify/type-provider-zod` only works with Zod v4.2 or later.
 
 > **Important (v0+)**
 >
-> Starting from **v0**, this library uses Zod’s `.encode()` / `.decode()` APIs introduced in **Zod 4.3**.
+> Starting from **v0**, this library uses Zod’s `.encode()` / `.decode()` APIs introduced in **Zod 4.1**.
 > Because of this change, **response serialization is now based on `z.output<T>` instead of `z.input<T>`**.
 
 ## How to use?
