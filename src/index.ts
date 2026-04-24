@@ -18,4 +18,4 @@ export {
   isResponseSerializationError,
   ResponseSerializationError,
   type ZodFastifySchemaValidationError,
-} from './errors.js'
+} from './errors.ts'

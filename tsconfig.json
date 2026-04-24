@@ -7,7 +7,9 @@
     "esModuleInterop": true,
     "declaration": true,
     "strict": true,
-    "isolatedDeclarations": true
+    "isolatedDeclarations": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "exclude": [
     "./node_modules",

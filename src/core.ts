@@ -12,10 +12,10 @@ import type {
 } from 'fastify'
 import type { $ZodRegistry, JSONSchema, output } from 'zod/v4/core'
 import { $ZodType, globalRegistry, safeDecode, safeEncode } from 'zod/v4/core'
-import { createValidationError, InvalidSchemaError, ResponseSerializationError } from './errors.js'
-import { generateIORegistries, type SchemaRegistryMeta } from './registry.js'
-import { assertIsOpenAPIObject, getJSONSchemaTarget } from './utils.js'
-import { type ZodToJsonConfig, zodRegistryToJson, zodSchemaToJson } from './zod-to-json.js'
+import { createValidationError, InvalidSchemaError, ResponseSerializationError } from './errors.ts'
+import { generateIORegistries, type SchemaRegistryMeta } from './registry.ts'
+import { assertIsOpenAPIObject, getJSONSchemaTarget } from './utils.ts'
+import { type ZodToJsonConfig, zodRegistryToJson, zodSchemaToJson } from './zod-to-json.ts'
 
 type FreeformRecord = Record<string, any>
 
