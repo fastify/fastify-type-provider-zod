@@ -1,11 +1,12 @@
 import type {
+  $ZodCodec,
   $ZodDate,
   $ZodUndefined,
   $ZodUnion,
   JSONSchema,
   RegistryToJSONSchemaParams,
 } from 'zod/v4/core'
-import { $ZodRegistry, $ZodType, toJSONSchema } from 'zod/v4/core'
+import { $ZodRegistry, $ZodType, toJSONSchema, $ZodCodec as ZodCodec } from 'zod/v4/core'
 import type { SchemaRegistryMeta } from './registry.ts'
 import { getReferenceUri } from './utils.ts'
 
@@ -24,13 +25,32 @@ function isZodUndefined(entity: unknown): entity is $ZodUndefined {
   return entity instanceof $ZodType && entity._zod.def.type === 'undefined'
 }
 
+function isZodCodec(entity: unknown): entity is $ZodCodec {
+  return entity instanceof ZodCodec
+}
+
+type ZodToJsonIO = 'input' | 'output' | 'response'
+
 const getOverride = (
   ctx: {
     zodSchema: $ZodType
     jsonSchema: JSONSchema.BaseSchema
   },
-  io: 'input' | 'output',
-) => {
+  io: ZodToJsonIO,
+  registry: $ZodRegistry<SchemaRegistryMeta>,
+  config: ZodToJsonConfig,
+): boolean => {
+  if (io === 'response' && isZodCodec(ctx.zodSchema)) {
+    const encodedSchema = zodSchemaToJsonInline(ctx.zodSchema, registry, 'input', config)
+
+    for (const key in ctx.jsonSchema) {
+      delete ctx.jsonSchema[key]
+    }
+    Object.assign(ctx.jsonSchema, encodedSchema)
+
+    return true
+  }
+
   if (isZodUnion(ctx.zodSchema)) {
     // Filter unrepresentable types in unions
     // TODO: Should be fixed upstream and not merged in this plugin.
@@ -40,7 +60,7 @@ const getOverride = (
 
   if (isZodDate(ctx.zodSchema)) {
     // Allow dates to be represented as strings in output schemas
-    if (io === 'output') {
+    if (io !== 'input') {
       ctx.jsonSchema.type = 'string'
       ctx.jsonSchema.format = 'date-time'
     }
@@ -48,10 +68,12 @@ const getOverride = (
 
   if (isZodUndefined(ctx.zodSchema)) {
     // Allow undefined to be represented as null in output schemas
-    if (io === 'output') {
+    if (io !== 'input') {
       ctx.jsonSchema.type = 'null'
     }
   }
+
+  return false
 }
 
 export type ZodToJsonConfig = {} & Omit<
@@ -60,12 +82,15 @@ export type ZodToJsonConfig = {} & Omit<
 >
 
 const composeOverride = (
-  io: 'input' | 'output',
-  override?: RegistryToJSONSchemaParams['override'],
+  io: ZodToJsonIO,
+  registry: $ZodRegistry<SchemaRegistryMeta>,
+  config: ZodToJsonConfig,
 ): RegistryToJSONSchemaParams['override'] => {
   return (ctx) => {
-    getOverride(ctx, io)
-    override?.(ctx)
+    const codecSchemaReplaced = getOverride(ctx, io, registry, config)
+    if (!codecSchemaReplaced) {
+      config.override?.(ctx)
+    }
   }
 }
 
@@ -83,23 +108,12 @@ const deleteInvalidProperties: (
   return object
 }
 
-export const zodSchemaToJson: (
+const zodSchemaToJsonInline: (
   zodSchema: $ZodType,
   registry: $ZodRegistry<SchemaRegistryMeta>,
-  io: 'input' | 'output',
+  io: ZodToJsonIO,
   config: ZodToJsonConfig,
 ) => ReturnType<typeof deleteInvalidProperties> = (zodSchema, registry, io, config) => {
-  /**
-   * Checks whether the provided schema is registered in the given registry.
-   * If it is present and has an `id`, it can be referenced as component.
-   *
-   * @see https://github.com/turkerdev/fastify-type-provider-zod/issues/173
-   */
-  const schemaRegistryEntry = registry.get(zodSchema)
-  if (schemaRegistryEntry?.id) {
-    return { $ref: getReferenceUri(schemaRegistryEntry.id) }
-  }
-
   /**
    * Unfortunately, at the time of writing, there is no way to generate a schema with `$ref`
    * using `toJSONSchema` and a zod schema.
@@ -115,7 +129,7 @@ export const zodSchemaToJson: (
     schemas: { [SCHEMA_REGISTRY_ID_PLACEHOLDER]: result },
   } = toJSONSchema(tempRegistry, {
     ...config,
-    io,
+    io: io === 'response' ? 'output' : io,
     target: config.target,
     metadata: registry,
     unrepresentable: config.unrepresentable ?? 'any',
@@ -128,7 +142,7 @@ export const zodSchemaToJson: (
      * @see https://github.com/colinhacks/zod/issues/4750
      */
     uri: () => SCHEMA_URI_PLACEHOLDER,
-    override: composeOverride(io, config.override),
+    override: composeOverride(io, registry, config),
   })
 
   const jsonSchema = deleteInvalidProperties(result)
@@ -144,21 +158,41 @@ export const zodSchemaToJson: (
   }) as typeof result
 }
 
+export const zodSchemaToJson: (
+  zodSchema: $ZodType,
+  registry: $ZodRegistry<SchemaRegistryMeta>,
+  io: ZodToJsonIO,
+  config: ZodToJsonConfig,
+) => ReturnType<typeof deleteInvalidProperties> = (zodSchema, registry, io, config) => {
+  /**
+   * Checks whether the provided schema is registered in the given registry.
+   * If it is present and has an `id`, it can be referenced as component.
+   *
+   * @see https://github.com/turkerdev/fastify-type-provider-zod/issues/173
+   */
+  const schemaRegistryEntry = registry.get(zodSchema)
+  if (schemaRegistryEntry?.id) {
+    return { $ref: getReferenceUri(schemaRegistryEntry.id) }
+  }
+
+  return zodSchemaToJsonInline(zodSchema, registry, io, config)
+}
+
 export const zodRegistryToJson: (
   registry: $ZodRegistry<SchemaRegistryMeta>,
-  io: 'input' | 'output',
+  io: ZodToJsonIO,
   config: ZodToJsonConfig,
 ) => Record<string, JSONSchema.BaseSchema> = (registry, io, config) => {
   const result = toJSONSchema(registry, {
     ...config,
-    io,
+    io: io === 'response' ? 'output' : io,
     target: config.target,
     metadata: registry,
     unrepresentable: config.unrepresentable ?? 'any',
     cycles: 'ref',
     reused: 'inline',
     uri: (id) => getReferenceUri(id),
-    override: composeOverride(io, config.override),
+    override: composeOverride(io, registry, config),
   }).schemas
 
   const jsonSchemas: Record<string, JSONSchema.BaseSchema> = {}

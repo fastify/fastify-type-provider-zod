@@ -686,6 +686,165 @@ describe('transformer', () => {
     await validator.validate(openApiSpec, {})
   })
 
+  it('should document the encoded input side of response codecs', async () => {
+    const app = Fastify()
+    app.setValidatorCompiler(validatorCompiler)
+    app.setSerializerCompiler(serializerCompiler)
+
+    const CSV_CODEC = z.codec(z.array(z.int()), z.string(), {
+      decode: (value) => value.join(','),
+      encode: (value) => value.split(',').map(Number),
+    })
+
+    app.register(fastifySwagger, {
+      ...OPENAPI_ROOT,
+      transform: createJsonSchemaTransform({}),
+    })
+
+    app.after(() => {
+      app.withTypeProvider<ZodTypeProvider>().route({
+        method: 'POST',
+        url: '/codec',
+        schema: {
+          body: CSV_CODEC,
+          response: {
+            200: z.object({
+              content: CSV_CODEC,
+              internalType: z.string(),
+            }),
+          },
+        },
+        handler: (request, reply) => {
+          reply.send({
+            content: request.body,
+            internalType: typeof request.body,
+          })
+        },
+      })
+    })
+
+    await app.ready()
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/codec',
+      payload: [1, 2, 3],
+    })
+    const openApiSpec = app.swagger()
+
+    expect(response.json()).toEqual({
+      content: [1, 2, 3],
+      internalType: 'string',
+    })
+    expect(openApiSpec.paths['/codec'].post).toMatchObject({
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'array',
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            'application/json': {
+              schema: {
+                properties: {
+                  content: {
+                    type: 'array',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+    await validator.validate(openApiSpec, {})
+  })
+
+  it('should document registered response codecs under the output component name', async () => {
+    const app = Fastify()
+    app.setValidatorCompiler(validatorCompiler)
+    app.setSerializerCompiler(serializerCompiler)
+
+    const schemaRegistry = z.registry<{ id: string }>()
+    const ITEM_SCHEMA = z.object({ id: z.string() })
+    const CSV_CODEC = z.codec(z.array(ITEM_SCHEMA), z.string(), {
+      decode: (value) => value.map((item) => item.id).join(','),
+      encode: (value) => value.split(',').map((id) => ({ id })),
+    })
+
+    schemaRegistry.add(ITEM_SCHEMA, { id: 'Item' })
+    schemaRegistry.add(CSV_CODEC, { id: 'Csv' })
+
+    app.register(fastifySwagger, {
+      ...OPENAPI_ROOT,
+      transform: createJsonSchemaTransform({ schemaRegistry }),
+      transformObject: createJsonSchemaTransformObject({ schemaRegistry }),
+    })
+
+    app.after(() => {
+      app.withTypeProvider<ZodTypeProvider>().route({
+        method: 'POST',
+        url: '/registered-codec',
+        schema: {
+          body: CSV_CODEC,
+          response: {
+            200: CSV_CODEC,
+          },
+        },
+        handler: (request, reply) => {
+          reply.send(request.body)
+        },
+      })
+    })
+
+    await app.ready()
+
+    const openApiSpec = app.swagger()
+
+    expect(openApiSpec.components?.schemas).toMatchObject({
+      Csv: {
+        items: {
+          $ref: '#/components/schemas/Item',
+        },
+        type: 'array',
+      },
+      CsvInput: {
+        items: {
+          $ref: '#/components/schemas/ItemInput',
+        },
+        type: 'array',
+      },
+    })
+    expect(openApiSpec.paths['/registered-codec'].post).toMatchObject({
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              $ref: '#/components/schemas/CsvInput',
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            'application/json': {
+              schema: {
+                $ref: '#/components/schemas/Csv',
+              },
+            },
+          },
+        },
+      },
+    })
+    await validator.validate(openApiSpec, {})
+  })
+
   it('should generate referenced input and output schemas correctly', async () => {
     const app = Fastify()
     app.setValidatorCompiler(validatorCompiler)

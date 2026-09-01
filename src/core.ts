@@ -111,7 +111,7 @@ export const createJsonSchemaTransform = ({
       for (const prop in response as any) {
         const zodSchema = resolveSchema((response as any)[prop])
 
-        const cacheKey = `output|${config.target}`
+        const cacheKey = `response|${config.target}`
 
         let perSchema = zodSchemaToJsonCache.get(zodSchema)
         if (!perSchema) {
@@ -121,7 +121,7 @@ export const createJsonSchemaTransform = ({
 
         let jsonSchema = perSchema.get(cacheKey)
         if (!jsonSchema) {
-          jsonSchema = zodSchemaToJson(zodSchema, outputRegistry, 'output', config)
+          jsonSchema = zodSchemaToJson(zodSchema, outputRegistry, 'response', config)
           perSchema.set(cacheKey, jsonSchema)
         }
 
@@ -163,7 +163,7 @@ export const createJsonSchemaTransformObject =
 
     const { inputRegistry, outputRegistry } = generateIORegistries(schemaRegistry)
     const inputSchemas = zodRegistryToJson(inputRegistry, 'input', config)
-    const outputSchemas = zodRegistryToJson(outputRegistry, 'output', config)
+    const outputSchemas = zodRegistryToJson(outputRegistry, 'response', config)
 
     return {
       ...document.openapiObject,

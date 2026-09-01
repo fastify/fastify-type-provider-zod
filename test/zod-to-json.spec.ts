@@ -3,6 +3,31 @@ import { z } from 'zod/v4'
 import { zodRegistryToJson, zodSchemaToJson } from '../src/zod-to-json'
 
 describe('zod-to-json', () => {
+  it('composes custom overrides with encoded response codec schemas', () => {
+    const CSV_CODEC = z.codec(z.array(z.int()), z.string(), {
+      decode: (value) => value.join(','),
+      encode: (value) => value.split(',').map(Number),
+    })
+
+    const jsonSchema = zodSchemaToJson(z.object({ content: CSV_CODEC }), z.registry(), 'response', {
+      target: 'openapi-3.0',
+      override: (ctx) => {
+        if (ctx.zodSchema === CSV_CODEC) {
+          ctx.jsonSchema.description = 'encoded codec value'
+        }
+      },
+    })
+
+    expect(jsonSchema).toMatchObject({
+      properties: {
+        content: {
+          description: 'encoded codec value',
+          type: 'array',
+        },
+      },
+    })
+  })
+
   it('composes custom overrides with built-in output normalization for inline schemas', () => {
     const CREATED_AT = z.date()
 

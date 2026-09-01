@@ -22,6 +22,10 @@ npm i @fastify/type-provider-zod
 > Starting from **v0**, this library uses Zod’s `.encode()` / `.decode()` APIs introduced in **Zod 4.1**.
 > Because of this change, **response serialization is now based on `z.output<T>` instead of `z.input<T>`**.
 
+Response handlers therefore receive and return `z.output<T>`. When a response schema contains a
+Zod codec, the serializer encodes that value back to `z.input<T>` before sending JSON, so generated
+OpenAPI response schemas describe the encoded `z.input<T>` wire representation.
+
 ## How to use?
 
 ```ts
