@@ -1,6 +1,6 @@
 {
   "name": "@fastify/type-provider-zod",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zod Type Provider for Fastify@5",
   "type": "module",
   "main": "./dist/cjs/index.cjs",
@@ -70,7 +70,7 @@
     "tstyche": "^7.0.0",
     "typescript": "~6.0.2",
     "unplugin-isolated-decl": "^0.16.0",
-    "vitest": "^3.2.4",
+    "vitest": "^5.0.3",
     "zod": "^4.5.0"
   }
 }
