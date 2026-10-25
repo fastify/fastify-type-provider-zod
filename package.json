@@ -16,6 +16,10 @@
       "default": "./dist/esm/index.js"
     }
   },
+  "files": [
+    "src",
+    "dist"
+  ],
   "scripts": {
     "build": "vite build",
     "prepare": "npm run build",
