@@ -914,4 +914,89 @@ describe('transformer', () => {
 
     expect(() => app.swagger()).toThrow()
   })
+
+  it('should generate encoded wire schemas for codecs and transforms in response schemas', async () => {
+    const app = Fastify()
+    app.setValidatorCompiler(validatorCompiler)
+    app.setSerializerCompiler(serializerCompiler)
+
+    const stringToNumber = z.codec(z.string().regex(z.regexes.number), z.number(), {
+      decode: (str) => Number.parseFloat(str),
+      encode: (num) => num.toString(),
+    })
+
+    const RESPONSE_SCHEMA = z.object({
+      id: z.string().default('1'),
+      amount: stringToNumber,
+      createdAt: z.date(),
+    })
+
+    app.register(fastifySwagger, {
+      openapi: {
+        openapi: '3.0.3',
+        info: {
+          title: 'SampleApi',
+          description: 'Sample backend service',
+          version: '1.0.0',
+        },
+        servers: [],
+      },
+      transform: createJsonSchemaTransform({}),
+      transformObject: createJsonSchemaTransformObject({}),
+    })
+
+    app.after(() => {
+      app.withTypeProvider<ZodTypeProvider>().route({
+        method: 'GET',
+        url: '/item',
+        schema: {
+          response: {
+            200: RESPONSE_SCHEMA,
+          },
+        },
+        handler: (_, res) => {
+          res.send({
+            id: '1',
+            amount: 42.5,
+            createdAt: new Date(0),
+          })
+        },
+      })
+    })
+
+    await app.ready()
+
+    const itemResponse = await app.inject().get('/item')
+    expect(itemResponse.statusCode).toBe(200)
+    expect(itemResponse.json()).toEqual({
+      id: '1',
+      amount: '42.5',
+      createdAt: '1970-01-01T00:00:00.000Z',
+    })
+
+    const openApiSpec = app.swagger()
+    expect(
+      openApiSpec.paths?.['/item']?.get?.responses?.['200']?.content?.['application/json']?.schema,
+    ).toEqual({
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          default: '1',
+        },
+        amount: {
+          type: 'string',
+          pattern: z.regexes.number.source,
+        },
+        createdAt: {
+          type: 'string',
+          format: 'date-time',
+        },
+      },
+      required: ['id', 'amount', 'createdAt'],
+      additionalProperties: false,
+    })
+
+    await validator.validate(openApiSpec, {})
+  })
 })
