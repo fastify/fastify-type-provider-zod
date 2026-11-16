@@ -58,6 +58,34 @@ app.withTypeProvider<ZodTypeProvider>().route({
 app.listen({ port: 4949 });
 ```
 
+## Schema compilation
+
+Zod 4.5 can compile a schema. Compile it once and reuse it. The type provider keeps the inferred types. This trades bundle size for faster validation and serialization.
+
+```ts
+import { z } from 'zod/v4';
+
+const querySchema = z.compile(
+  z.object({
+    name: z.string().min(4),
+  }),
+);
+
+app.withTypeProvider<ZodTypeProvider>().route({
+  method: 'GET',
+  url: '/',
+  schema: {
+    querystring: querySchema,
+    response: {
+      200: z.string(),
+    },
+  },
+  handler: (req, res) => {
+    res.send(req.query.name);
+  },
+});
+```
+
 You can also pass options to the `serializerCompiler` function:
 
 ```ts
