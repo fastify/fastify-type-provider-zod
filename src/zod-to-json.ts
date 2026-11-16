@@ -1,5 +1,6 @@
 import type {
   $ZodDate,
+  $ZodPipe,
   $ZodUndefined,
   $ZodUnion,
   JSONSchema,
@@ -24,12 +25,50 @@ function isZodUndefined(entity: unknown): entity is $ZodUndefined {
   return entity instanceof $ZodType && entity._zod.def.type === 'undefined'
 }
 
+function isZodCodec(entity: unknown): entity is $ZodPipe {
+  return (
+    entity instanceof $ZodType &&
+    entity._zod.def.type === 'pipe' &&
+    'reverseTransform' in entity._zod.def
+  )
+}
+
+const JSON_SCHEMA_METADATA_KEYS = [
+  'description',
+  'title',
+  'examples',
+  'default',
+  'deprecated',
+  'readOnly',
+  'writeOnly',
+  '$comment',
+] as const
+
+const replaceJsonSchema = (target: JSONSchema.BaseSchema, source: JSONSchema.BaseSchema): void => {
+  const metadata: Record<string, unknown> = {}
+  for (const key of JSON_SCHEMA_METADATA_KEYS) {
+    if (key in target) {
+      metadata[key] = (target as Record<string, unknown>)[key]
+    }
+  }
+
+  for (const key of Object.keys(target)) {
+    delete (target as Record<string, unknown>)[key]
+  }
+  Object.assign(target, source)
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!(key in target)) {
+      ;(target as Record<string, unknown>)[key] = value
+    }
+  }
+}
+
 const getOverride = (
-  ctx: {
-    zodSchema: $ZodType
-    jsonSchema: JSONSchema.BaseSchema
-  },
+  ctx: { zodSchema: $ZodType; jsonSchema: JSONSchema.BaseSchema },
   io: 'input' | 'output',
+  config: ZodToJsonConfig,
+  inputRegistry: $ZodRegistry<SchemaRegistryMeta>,
 ) => {
   if (isZodUnion(ctx.zodSchema)) {
     // Filter unrepresentable types in unions
@@ -38,19 +77,25 @@ const getOverride = (
     ctx.jsonSchema.anyOf = ctx.jsonSchema.anyOf?.filter((schema) => Object.keys(schema).length > 0)
   }
 
+  if (isZodCodec(ctx.zodSchema) && io === 'output') {
+    // Responses are serialized through `.encode()`, so a codec's wire value is its
+    // input type. Describe that type while keeping the output type elsewhere.
+    replaceJsonSchema(
+      ctx.jsonSchema,
+      zodSchemaToJson(ctx.zodSchema._zod.def.in, inputRegistry, 'input', config),
+    )
+    return
+  }
+
   if (isZodDate(ctx.zodSchema)) {
-    // Allow dates to be represented as strings in output schemas
-    if (io === 'output') {
-      ctx.jsonSchema.type = 'string'
-      ctx.jsonSchema.format = 'date-time'
-    }
+    // Dates are always strings on the wire, in request and response payloads.
+    ctx.jsonSchema.type = 'string'
+    ctx.jsonSchema.format = 'date-time'
   }
 
   if (isZodUndefined(ctx.zodSchema)) {
-    // Allow undefined to be represented as null in output schemas
-    if (io === 'output') {
-      ctx.jsonSchema.type = 'null'
-    }
+    // An undefined value has no JSON representation, so describe it as null.
+    ctx.jsonSchema.type = 'null'
   }
 }
 
@@ -61,10 +106,12 @@ export type ZodToJsonConfig = {} & Omit<
 
 const composeOverride = (
   io: 'input' | 'output',
+  config: ZodToJsonConfig,
+  inputRegistry: $ZodRegistry<SchemaRegistryMeta>,
   override?: RegistryToJSONSchemaParams['override'],
 ): RegistryToJSONSchemaParams['override'] => {
   return (ctx) => {
-    getOverride(ctx, io)
+    getOverride(ctx, io, config, inputRegistry)
     override?.(ctx)
   }
 }
@@ -88,7 +135,14 @@ export const zodSchemaToJson: (
   registry: $ZodRegistry<SchemaRegistryMeta>,
   io: 'input' | 'output',
   config: ZodToJsonConfig,
-) => ReturnType<typeof deleteInvalidProperties> = (zodSchema, registry, io, config) => {
+  inputRegistry?: $ZodRegistry<SchemaRegistryMeta>,
+) => ReturnType<typeof deleteInvalidProperties> = (
+  zodSchema,
+  registry,
+  io,
+  config,
+  inputRegistry = registry,
+) => {
   /**
    * Checks whether the provided schema is registered in the given registry.
    * If it is present and has an `id`, it can be referenced as component.
@@ -128,7 +182,7 @@ export const zodSchemaToJson: (
      * @see https://github.com/colinhacks/zod/issues/4750
      */
     uri: () => SCHEMA_URI_PLACEHOLDER,
-    override: composeOverride(io, config.override),
+    override: composeOverride(io, config, inputRegistry, config.override),
   })
 
   const jsonSchema = deleteInvalidProperties(result)
@@ -148,7 +202,8 @@ export const zodRegistryToJson: (
   registry: $ZodRegistry<SchemaRegistryMeta>,
   io: 'input' | 'output',
   config: ZodToJsonConfig,
-) => Record<string, JSONSchema.BaseSchema> = (registry, io, config) => {
+  inputRegistry?: $ZodRegistry<SchemaRegistryMeta>,
+) => Record<string, JSONSchema.BaseSchema> = (registry, io, config, inputRegistry = registry) => {
   const result = toJSONSchema(registry, {
     ...config,
     io,
@@ -158,7 +213,7 @@ export const zodRegistryToJson: (
     cycles: 'ref',
     reused: 'inline',
     uri: (id) => getReferenceUri(id),
-    override: composeOverride(io, config.override),
+    override: composeOverride(io, config, inputRegistry, config.override),
   }).schemas
 
   const jsonSchemas: Record<string, JSONSchema.BaseSchema> = {}
