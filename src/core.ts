@@ -121,7 +121,7 @@ export const createJsonSchemaTransform = ({
 
         let jsonSchema = perSchema.get(cacheKey)
         if (!jsonSchema) {
-          jsonSchema = zodSchemaToJson(zodSchema, outputRegistry, 'output', config)
+          jsonSchema = zodSchemaToJson(zodSchema, outputRegistry, 'output', config, inputRegistry)
           perSchema.set(cacheKey, jsonSchema)
         }
 
@@ -163,7 +163,7 @@ export const createJsonSchemaTransformObject =
 
     const { inputRegistry, outputRegistry } = generateIORegistries(schemaRegistry)
     const inputSchemas = zodRegistryToJson(inputRegistry, 'input', config)
-    const outputSchemas = zodRegistryToJson(outputRegistry, 'output', config)
+    const outputSchemas = zodRegistryToJson(outputRegistry, 'output', config, inputRegistry)
 
     return {
       ...document.openapiObject,

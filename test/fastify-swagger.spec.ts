@@ -812,6 +812,64 @@ describe('transformer', () => {
     await validator.validate(openApiSpec, {})
   })
 
+  it('should describe response codecs with their input type', async () => {
+    const app = Fastify()
+    app.setValidatorCompiler(validatorCompiler)
+    app.setSerializerCompiler(serializerCompiler)
+
+    app.register(fastifySwagger, {
+      ...OPENAPI_ROOT,
+      transform: jsonSchemaTransform,
+    })
+
+    app.register(fastifySwaggerUI, {
+      routePrefix: '/documentation',
+    })
+
+    const stringFromArray = z
+      .codec(z.array(z.int()), z.string(), {
+        decode: (value) => value.toString(),
+        encode: (value) => value.split(',').map((item) => Number.parseInt(item, 10)),
+      })
+      .describe('String from an array')
+
+    app.after(() => {
+      app.withTypeProvider<ZodTypeProvider>().route({
+        method: 'POST',
+        url: '/test',
+        schema: {
+          body: stringFromArray,
+          response: {
+            200: z.object({
+              content: stringFromArray,
+              internalType: z.string(),
+            }),
+          },
+        },
+        handler: (request, reply) => {
+          reply.send({ content: request.body, internalType: typeof request.body })
+        },
+      })
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/test',
+      payload: [1, 2, 3],
+    })
+    expect(response.json()).toEqual({ content: [1, 2, 3], internalType: 'string' })
+
+    const openApiSpec = JSON.parse((await app.inject().get('/documentation/json')).body)
+    const responseSchema =
+      openApiSpec.paths['/test'].post.responses['200'].content['application/json'].schema
+
+    expect(responseSchema.properties.content).toMatchObject({
+      description: 'String from an array',
+      type: 'array',
+      items: { type: 'integer' },
+    })
+  })
+
   it('should allow specification of Zod target to handle OpenAPI 3.1', async () => {
     const app = Fastify()
     app.setValidatorCompiler(validatorCompiler)
